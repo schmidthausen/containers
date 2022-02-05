@@ -48,7 +48,7 @@ Clone the playbook and enter the directory. Then run:
 ansible-galaxy install -r requirements.yml
 ```
 
-Check the gatewaylp.yml file in the host_vars directory, it has some variables you need to define before you can run the playbook. I set them in my vault file outside the project directory.
+Check the gatewaylp.yml file in the host_vars directory, it has some variables you need to define before you can run the playbook. I set them in my vault file outside the project directory, but you can set them in that file.
 
 You can run the whole playbook and it will set up these containers.
 
