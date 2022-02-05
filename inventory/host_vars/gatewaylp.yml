@@ -1,6 +1,6 @@
 ---
 minecraft_whitelist: ""
-pihole_password: ""
-pihole_ip_address: "" # the ip used on your lan for dns.
+pihole_password: "password"
+pihole_ip_address: "192.168.1.226" # the ip used on your lan for dns.
 my_domain_name: "" # the domain name used to access your pihole when reverse proxying. Leave out the subdomain.
 my_email: "" # used if you're using zerossl for your domain certs.
