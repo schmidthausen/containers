@@ -11,52 +11,51 @@ Read the docs for each container to make sure you're using the correct variables
 First you need to have ansible installed. I like using pip for that. Make sure you have pip installed with your distro's package manager.
 
 Fedora:
-'''bash
+```bash
 sudo dnf install python3-pip
-'''
+```
 openSUSE:
-'''bash
+```bash
 sudo zypper in python39-pip
-'''
+```
 
 Then use pip to install ansible, I like to install wheel first.
-'''bash
+```bash
 pip install wheel
 pip install ansible
-'''
+```
 
 If you haven't already, make sure /home/$USER/.local/bin is in your path.
-'''bash
+```bash
 echo $PATH
-,,,
 export PATH=/home/$USER/.local/bin:$PATH
-,,,
+```
 
 Make it persistent.
 openSUSE:
-'''bash
+```bash
 echo "export PATH=/home/$USER/.local/bin:$PATH" >> /home/$USER/.profile
-'''
+```
 Fedora:
-'''bash
+```bash
 echo "export PATH=/home/$USER/.local/bin:$PATH" >> /home/$USER/.bashrc
-,,,
+```
 
 ## Using this playbook
 
 Clone the playbook and enter the directory. Then run:
-'''bash
+```bash
 ansible-galaxy install -r requirements.yml
-,,,
+```
 
 Check the gatewaylp.yml file in the host_vars directory, it has some variables you need to define before you can run the playbook. I set them in my vault file outside the project directory.
 
 You can run the whole playbook and it will set up these containers.
 
 I set it up with tags. That way you can select which tasks to run. For example:
-'''bash
+```bash
 ansible-playbook -K container.yml --tags "swag,pihole,plex"
-'''
+```
 
 ## Container name resolution
 
