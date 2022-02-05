@@ -1,0 +1,57 @@
+---
+- name: Stop and disable service if it is running or enabled.
+  ansible.builtin.service:
+    name: "{{ ansible_facts.services[serviceToDisable]['name'] }}"
+    enabled: false
+    state: stopped
+  when:
+    - ansible_facts.services[serviceToDisable] is defined
+    - ansible_facts.services[serviceToDisable]['status'] == 'enabled' or ansible_facts.services[serviceToDisable]['state'] == 'running'
+  loop: "{{ disable_services }}"
+  loop_control:
+    loop_var: serviceToDisable
+  vars:
+    disable_services:
+      - container-plex.service
+
+# no folder/storage setup, this was pre-existing
+
+- name: set up plex container.
+  containers.podman.podman_container:
+    name: plex
+    image: lscr.io/linuxserver/plex:latest
+    env:
+      PUID: "{{ podman_info['uid'] }}"
+      PGID: "{{ podman_info['group'] }}"
+      TZ: "America/Vancouver"
+      VERSION: "public"
+    device:
+      - /dev/dri:/dev/dri:rwm ## intel quicksync device share
+    volume:
+      - /multimedia/plex:/config:z
+      - /multimedia/videos:/videos:z
+      - /multimedia/books:/books:z
+      - /multimedia/aio:/aio:z
+      - /multimedia/pictures:/pictures:z
+      - /multimedia/music:/music:z
+    ports:
+      - "32400:32400/tcp"
+      - "32410:32410/udp"
+      - "32412:32412/udp"
+      - "32413:32413/udp"
+      - "32414:32414/udp"
+    generate_systemd:
+      path: /usr/local/lib/systemd/system/
+      restart_policy: on-failure
+      time: 120
+      names: true
+      new: true
+    state: present
+    label:
+      io.containers.autoupdate: registry
+
+- name: start plex
+  service:
+    name: container-plex.service
+    enabled: yes
+    state: started

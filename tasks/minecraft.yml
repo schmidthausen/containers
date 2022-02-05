@@ -1,0 +1,75 @@
+---
+- name: Stop and disable minecraft service if it is running or enabled.
+  ansible.builtin.service:
+    name: "{{ ansible_facts.services[serviceToDisable]['name'] }}"
+    enabled: false
+    state: stopped
+  when:
+    - serviceToDisable is defined
+    - ansible_facts.services[serviceToDisable]['status'] == 'enabled' or ansible_facts.services[serviceToDisable]['state'] == 'running'
+  loop: "{{ disable_services }}"
+  loop_control:
+    loop_var: serviceToDisable
+  vars:
+    disable_services:
+      - container-minecraft.service
+
+- name: Create required container subvolume.
+  ansible.builtin.command:
+    cmd: btrfs subvolume create /var/opt/minecraft
+    creates: /var/opt/minecraft
+
+- name: Make sure required directories are created.
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: podman
+  with_items:
+    - path: /var/opt/minecraft
+    - path: /var/opt/minecraft/data
+
+- name: setup minecraft container
+  containers.podman.podman_container:
+    name: minecraft
+    image: docker.io/itzg/minecraft-server:latest
+    timezone: "America/Vancouver"
+    env:
+      VERSION: "1.18"
+      UID: "{{ podman_info['uid'] }}"
+      GID: "{{ podman_info['group'] }}"
+      EULA: "TRUE"
+      TYPE: "PURPUR"
+      PURPUR_BUILD: "1.18"
+      FORCE_REDOWNLOAD: "false"
+      USE_FLARE_FLAGS: "false"
+      USE_AIKAR_FLAGS: "true"
+      MEMORY: "2G"
+      WHITELIST: "{{ minecraft_whitelist }}"
+      OPS: "{{ minecraft_whitelist }}"
+      MAX_PLAYERS: "10"
+      ENABLE_WHITELIST: "true"
+      ENFORCE_WHITELIST: "true"
+      ANNOUNCE_PLAYER_ACHIEVEMENTS: "true"
+      SNOOPER_ENABLED: "false"
+    cpus: "2"
+    memory: "3g"
+    volume:
+      - /var/opt/minecraft/data:/data:z
+    ports:
+      - "127.0.0.1:25565:25565/tcp"
+    generate_systemd:
+      path: /usr/local/lib/systemd/system/
+      restart_policy: on-failure
+      time: 120
+      names: true
+      new: true
+    state: present
+    recreate: true
+    label:
+      io.containers.autoupdate: registry
+
+- name: start minecraft
+  service:
+    name: container-minecraft.service
+    enabled: yes
+    state: started

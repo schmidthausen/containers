@@ -1,0 +1,6 @@
+---
+- name: Set up reverse SWAG reverse proxy network.
+  containers.podman.podman_network:
+    name: swag-proxy
+    ipv6: false
+    state: present

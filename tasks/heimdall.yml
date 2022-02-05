@@ -1,0 +1,74 @@
+---
+- name: Stop and disable service if it is running or enabled.
+  service:
+    name: "{{ ansible_facts.services[serviceToDisable]['name'] }}"
+    enabled: false
+    state: stopped
+  when:
+    - serviceToDisable is defined
+    - ansible_facts.services[serviceToDisable]['status'] == 'enabled' or ansible_facts.services[serviceToDisable]['state'] == 'running'
+  loop: "{{ disable_services }}"
+  loop_control:
+    loop_var: serviceToDisable
+  vars:
+    disable_services:
+      - container-heimdall.service
+  ignore_errors: true
+
+- name: Create required container subvolume.
+  ansible.builtin.command:
+    cmd: "{{ item.cmd }}"
+    creates: "{{ item.creates }}"
+  with_items:
+    - cmd: btrfs subvolume create /var/opt/heimdall
+      creates: /var/opt/heimdall
+
+- name: Create required container directories.
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: podman
+  with_items:
+    - path: /var/opt/heimdall
+
+- name: Setup heimdall container.
+  containers.podman.podman_container:
+    name: heimdall
+    image: lscr.io/linuxserver/heimdall:latest
+    network: swag-proxy
+    ip: 10.89.0.10
+    env:
+      PUID: "{{ podman_info['uid'] }}"
+      PGID: "{{ podman_info['group'] }}"
+      TZ: "America/Vancouver"
+      UMASK: "022"
+    cpus: "1"
+    volume:
+      - /var/opt/heimdall:/config:Z
+    generate_systemd:
+      path: /usr/local/lib/systemd/system/
+      restart_policy: on-failure
+      time: 120
+      names: true
+      new: true
+    state: present
+    recreate: true
+    label:
+      io.containers.autoupdate: registry
+
+- name: Start heimdall.
+  ansible.builtin.service:
+    name: container-heimdall.service
+    enabled: yes
+    state: started
+
+- name: Configure SWAG.
+  ansible.builtin.copy:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+  with_items:
+    - src: files/swag/heimdall.subfolder.conf
+      dest: /var/opt/swag/nginx/proxy-confs/heimdall.subfolder.conf
+    - src: files/swag/default
+      dest: /var/opt/swag/nginx/site-confs/default
+  notify: restart swag

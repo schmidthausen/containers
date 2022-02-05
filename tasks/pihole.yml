@@ -1,0 +1,144 @@
+---
+##
+## I use pihole and adguardhome together for now to use the superior ad blocking of pihole and the dns rewriting in
+## Adguardhome because its easy. When I get time I'll write a task that does the dns rewrites for me with just pihole.
+##
+- name: Stop and disable service if it is running or enabled.
+  ansible.builtin.service:
+    name: "{{ ansible_facts.services[serviceToDisable]['name'] }}"
+    enabled: false
+    state: stopped
+  when:
+    - ansible_facts.services[serviceToDisable] is defined
+    - ansible_facts.services[serviceToDisable]['status'] == 'enabled' or ansible_facts.services[serviceToDisable]['state'] == 'running'
+  loop: "{{ disable_services }}"
+  loop_control:
+    loop_var: serviceToDisable
+  vars:
+    disable_services:
+      - container-pihole.service
+      - container-adguard.service
+
+- name: Create required container subvolume.
+  ansible.builtin.command:
+    cmd: "{{ item.cmd }}"
+    creates: "{{ item.creates }}"
+  with_items:
+    - cmd: btrfs subvolume create /var/opt/pihole
+      creates: /var/opt/pihole
+    - cmd: btrfs subvolume create /var/opt/adguardhome
+      creates: /var/opt/adguardhome
+
+- name: Create required container subfolders.
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+  with_items:
+    - path: /var/opt/pihole/etc-pihole
+    - path: /var/opt/pihole/etc-dnsmasq.d
+    - path: /var/opt/adguardhome/conf
+    - path: /var/opt/adguardhome/work
+
+- name: Create pihole secret
+  containers.podman.podman_secret:
+    data: "{{ pihole_password }}"
+    name: piholePassword
+    driver_opts:
+      type: env
+      target: WEBPASSWORD
+    state: present
+    #force: true  # use if changing the secret.
+
+- name: Set up pihole container.
+  containers.podman.podman_container:
+    name: pihole
+    image: docker.io/pihole/pihole:latest
+    hostname: pi.hole
+    cpus: "1"
+    memory: "256m"
+    network: swag-proxy
+    ip: 10.89.0.40
+    dns: 10.89.0.50
+    ports:
+      - "53:53/tcp"
+      - "53:53/udp"
+      # - "80:80/tcp"
+    cap_add:
+      - NET_BIND_SERVICE # Allows FTLDNS binding to TCP/UDP sockets below 1024 (specifically DNS service on port 53)
+      # probably not strictly needed since the default is allow containers this cap.
+    env:
+      TZ: "America/Vancouver"
+      ServerIP: "{{ pihole_ip_address }}"
+      FTLCONF_REPLY_ADDR4: "{{ pihole_ip_address }}"
+      ADMIN_EMAIL: ""
+      PIHOLE_DNS_: "10.89.0.50;10.89.0.50"
+      DNSSEC: "true"
+      VIRTUAL_HOST: "{{ my_domain_name }}"
+      IPv6: "false"
+      WEBTHEME: "default-dark"
+      PROXY_LOCATION: "pihole"
+    volume:
+      - /var/opt/pihole/etc-pihole:/etc/pihole:Z
+      - /var/opt/pihole/etc-dnsmasq.d:/etc/dnsmasq.d:Z
+    secrets:
+      - piholePassword
+    generate_systemd:
+      path: /usr/local/lib/systemd/system/
+      restart_policy: on-failure
+      time: 120
+      names: true
+      new: true
+    state: present
+    recreate: true
+    label:
+      io.containers.autoupdate: registry
+
+- name: set up adguard container.
+  containers.podman.podman_container:
+    name: adguard
+    image: docker.io/adguard/adguardhome:latest
+    cap_add:
+      - NET_BIND_SERVICE
+    env:
+      TZ: "America/Vancouver"
+    volume:
+      - /var/opt/adguardhome/conf:/opt/adguardhome/conf:Z
+      - /var/opt/adguardhome/work:/opt/adguardhome/work:Z
+    network: swag-proxy
+    ip: "10.89.0.50"
+    cpus: "1"
+    memory: "64m"
+    generate_systemd:
+      path: /usr/local/lib/systemd/system/
+      restart_policy: on-failure
+      time: 120
+      names: true
+      new: true
+    state: present
+    recreate: true
+    label:
+      io.containers.autoupdate: registry
+
+- name: Start service.
+  service:
+    name: "{{ serviceToEnable }}"
+    enabled: true
+    state: started
+  loop: "{{ enable_services }}"
+  loop_control:
+    loop_var: serviceToEnable
+  vars:
+    enable_services:
+      - container-adguard.service
+      - container-pihole.service
+
+- name: configure swag
+  ansible.builtin.copy:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+  with_items:
+    - src: files/swag/pihole.subdomain.conf
+      dest: /var/opt/swag/nginx/proxy-confs/pihole.subdomain.conf
+    - src: files/swag/adguard.subdomain.conf
+      dest: /var/opt/swag/nginx/proxy-confs/adguard.subdomain.conf
+  notify: restart swag

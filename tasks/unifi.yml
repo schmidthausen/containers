@@ -1,0 +1,72 @@
+---
+- name: Stop and disable service if it is running or enabled.
+  ansible.builtin.service:
+    name: "{{ ansible_facts.services[serviceToDisable]['name'] }}"
+    enabled: false
+    state: stopped
+  when:
+    - serviceToDisable is defined
+    - ansible_facts.services[serviceToDisable]['status'] == 'enabled' or ansible_facts.services[serviceToDisable]['state'] == 'running'
+  loop: "{{ disable_services }}"
+  loop_control:
+    loop_var: serviceToDisable
+  vars:
+    disable_services:
+      - container-unifi-controller.service
+
+- name: Create required container subvolume.
+  ansible.builtin.command:
+    cmd: btrfs subvolume create /var/opt/unifi
+    creates: /var/opt/unifi
+
+- name: Create required container directories.
+  ansible.builtin.file:
+    path: /var/opt/unifi
+    state: directory
+    owner: podman
+
+- name: Setup unifi container.
+  containers.podman.podman_container:
+    name: unifi-controller
+    image: lscr.io/linuxserver/unifi-controller:latest
+    network: swag-proxy
+    ip: 10.89.0.20
+    env:
+      PUID: "{{ podman_info['uid'] }}"
+      PGID: "{{ podman_info['group'] }}"
+      TZ: "America/Vancouver"
+      UMASK: "022"
+    cpus: "1"
+    cpu_shares: 512
+    memory: "1.5g"
+    volume:
+      - /var/opt/unifi:/config:Z
+    ports:
+      - "192.168.1.40:3478:3478/udp" # unifi STUN port
+      - "192.168.1.40:10001:10001/udp" # required for AP discovery
+      - "192.168.1.40:8080:8080" # required for device comms
+      #- "8843:8843" # guest portal https
+      #- "8880:8880" # guest portal http
+      - "192.168.1.40:5514:5514/udp" # remote syslog port
+      - "192.168.1.40:8443:8443" # admin login
+    generate_systemd:
+      path: /usr/local/lib/systemd/system/
+      restart_policy: on-failure
+      time: 120
+      names: true
+      new: true
+    state: present
+    label:
+      io.containers.autoupdate: registry
+
+- name: Start unifi.
+  ansible.builtin.service:
+    name: container-unifi-controller.service
+    enabled: yes
+    state: started
+
+- name: Configure SWAG.
+  ansible.builtin.copy:
+    src: files/swag/unifi-controller.subdomain.conf
+    dest: /var/opt/swag/nginx/proxy-confs/unifi-controller.subdomain.conf
+  notify: restart swag

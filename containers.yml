@@ -1,0 +1,92 @@
+---
+- name: Set up the containers.
+  hosts: testing
+  become: true
+
+  handlers:
+
+    - name: restart swag
+      ansible.builtin.service:
+        name: container-swag.service
+        state: restarted
+
+  tasks:
+
+    - name: Gathering Service Facts
+      ansible.builtin.service_facts:
+      tags: always
+
+    - name: Create podman user.
+      ansible.builtin.user:
+        name: podman
+        create_home: false
+        system: true
+        state: present
+      register: podman_info
+      tags: always
+
+    - name: Ensure Podman is installed.
+      ansible.builtin.package:
+        name: podman
+        state: present
+      tags: setup
+
+    - name: Set required SELinx booleans.
+      ansible.posix.seboolean:
+        name: "{{ item.name }}"
+        state: true
+        persistent: true #survive a reboot
+      with_items:
+        - name: virt_sandbox_use_all_caps # these are just some I ran into
+        - name: virt_use_nfs
+      when: ansible_selinux.mode is defined
+      tags: setup
+
+    - name: Enable container auto-update
+      ansible.builtin.service:
+        name: podman-auto-update.timer
+        enabled: true
+        state: started
+      tags: setup
+
+    - name: Setup required container Network configuration.
+      ansible.builtin.include_tasks:
+        file: tasks/network.yml
+        apply:
+          tags: network
+      tags: network
+
+    - name: Set up pihole container.
+      ansible.builtin.include_tasks:
+        file: tasks/pihole.yml
+        apply:
+          tags: pihole
+      tags: pihole
+
+    - name: Setup SWAG
+      ansible.builtin.include_tasks:
+        file: tasks/swag.yml
+        apply:
+          tags: swag
+      tags: swag
+
+    - name: Set up unifi controller
+      ansible.builtin.include_tasks:
+        file: tasks/unifi.yml
+        apply:
+          tags: unifi
+      tags: unifi
+
+    - name: Set up Plex container
+      ansible.builtin.include_tasks:
+        file: tasks/plex.yml
+        apply:
+          tags: plex
+      tags: plex
+
+    - name: Set up minecraft container.
+      ansible.builtin.include_tasks:
+        file: tasks/minecraft.yml
+        apply:
+          tags: minecraft
+      tags: minecraft

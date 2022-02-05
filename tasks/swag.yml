@@ -1,0 +1,68 @@
+---
+- name: Stop and disable service if it is running or enabled.
+  service:
+    name: "{{ ansible_facts.services[serviceToDisable]['name'] }}"
+    enabled: false
+    state: stopped
+  when:
+    - ansible_facts.services[serviceToDisable] is defined
+    - ansible_facts.services[serviceToDisable]['status'] == 'enabled' or ansible_facts.services[serviceToDisable]['state'] == 'running'
+  loop: "{{ disable_services }}"
+  loop_control:
+    loop_var: serviceToDisable
+  vars:
+    disable_services:
+      - container-swag.service
+
+- name: Create required container subvolume.
+  ansible.builtin.command:
+    cmd: btrfs subvolume create /var/opt/swag
+    creates: /var/opt/swag
+
+- name: Chown swag directory
+  ansible.builtin.file:
+    path: /var/opt/swag
+    state: directory
+    owner: podman
+
+- name: Set up swag container.
+  containers.podman.podman_container:
+    name: swag
+    image: lscr.io/linuxserver/swag:latest # read the docs from linuxserver.io
+    cap_add:
+      - NET_ADMIN # required for fail2ban to modify firewall.
+    network: swag-proxy
+    ip: 10.89.0.2
+    env:
+      PUID: "{{ podman_info['uid'] }}"
+      PGID: "{{ podman_info['group'] }}"
+      TZ: "America/Vancouver"
+      URL: "{{ my_domain_name }}"
+      SUBDOMAINS: "wildcard"
+      VALIDATION: "dns"
+      DNSPLUGIN: "cloudflare"
+      CERTPROVIDER: "zerossl" # you need an account set up first.
+      EMAIL: "{{ my_email }}"
+    volume:
+      - /var/opt/swag:/config:z
+    ports:
+      - "443:443/tcp"
+      - "80:80/tcp"
+    cpus: "1"
+    memory: "128m"
+    generate_systemd:
+      path: /usr/local/lib/systemd/system/
+      restart_policy: on-failure
+      time: 120
+      names: true
+      new: true
+    state: present
+    label:
+      io.containers.autoupdate: registry
+
+- name: start swag
+  service:
+    name: container-swag.service
+    enabled: yes
+    state: started
+
